@@ -453,6 +453,33 @@ VLC_MODULE_BLACKLIST="
     .dummy
 "
 
+# PiecePlay LGPL build: VLC modules whose sources are GPL-2.0-or-later (or
+# include GPL headers) and that would otherwise be linked into libvlc.so.
+# The scan gate after the static module list catches anything missed here.
+VLC_MODULE_BLACKLIST="$VLC_MODULE_BLACKLIST
+    dummy
+    access_realrtsp
+    lua
+    dolby_surround_decoder
+    headphone_channel_mixer
+    mono
+    rotate
+    deinterlace
+    hqdn3d
+    file_logger
+    syslog
+    stream_out_rtp
+    stream_out_cycle
+    vod_rtsp
+    audioscrobbler
+    x264
+    x26410b
+    x265
+    postproc
+    dvdnav
+    dvdread
+"
+
 ###########################
 # Build buildsystem tools #
 ###########################
