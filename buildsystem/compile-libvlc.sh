@@ -340,7 +340,6 @@ VLC_CONTRIB_ARGS="\
 VLC_CONFIGURE_ARGS="\
     --with-pic \
     --disable-nls \
-    --enable-realrtsp \
     --enable-avformat \
     --enable-swscale \
     --enable-avcodec \
