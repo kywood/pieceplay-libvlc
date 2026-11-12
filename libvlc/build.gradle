@@ -28,9 +28,6 @@ android {
         tasks.whenTaskAdded { task ->
             if (task.name.startsWith('merge')) {
                 task.dependsOn hrtfsCopy
-                task.dependsOn luaPlaylistCopy
-                task.dependsOn luaMetaCopy
-                task.dependsOn luaModuleCopy
             }
         }
 
@@ -76,23 +73,8 @@ android {
         into 'assets/hrtfs'
     }
 
-    task luaPlaylistCopy(type: Copy) {
-        from '../vlc/share/lua/playlist'
-        into 'assets/lua/playlist'
-        exclude '**/*.txt'
-    }
-
-    task luaModuleCopy(type: Copy) {
-        from '../vlc/share/lua/modules'
-        into 'assets/lua/modules'
-        exclude '**/*.txt'
-    }
-
-    task luaMetaCopy(type: Copy) {
-        from '../vlc/share/lua/meta'
-        into 'assets/lua/meta'
-        exclude '**/*.txt'
-    }
+    // PiecePlay LGPL build: the VLC Lua scripts (share/lua) are GPL and the
+    // lua module is disabled, so they are not copied into the AAR assets.
     buildFeatures {
         buildConfig = true
         resValues = true

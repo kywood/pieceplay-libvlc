@@ -293,7 +293,7 @@ VLC_CONTRIB_ARGS="\
     --disable-dca \
     --disable-goom \
     --disable-chromaprint \
-    --enable-lua \
+    --disable-lua \
     --disable-schroedinger \
     --disable-sdl \
     --disable-SDL_image \
@@ -352,7 +352,7 @@ VLC_CONFIGURE_ARGS="\
     --disable-update-check \
     --disable-vlm \
     --disable-dbus \
-    --enable-lua \
+    --disable-lua \
     --disable-vcd \
     --disable-v4l2 \
     --enable-bluray \
