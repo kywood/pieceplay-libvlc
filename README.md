@@ -35,6 +35,7 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 | `compile-libvlc: blacklist GPL VLC modules` | GPL 소스(또는 GPL 헤더 포함) 모듈을 정적 모듈 목록에서 제외: dummy(control), access_realrtsp, lua, dolby_surround_decoder, headphone_channel_mixer, mono, rotate, deinterlace, hqdn3d, file_logger, syslog, stream_out_rtp, stream_out_cycle, vod_rtsp, audioscrobbler, x264·x265·postproc·dvdnav·dvdread |
 | `compile-libvlc: add a GPL scan gate for LGPL builds` | GPL contrib 라이브러리가 남았거나, 링크 전 `lib*_plugin.a` 또는 링크된 `.so`에 GPL 흔적이 있거나, 64비트 `.so`의 LOAD 정렬이 16 KB 미만이면 빌드를 실패시킴(`buildsystem/libvlc_gpl_scan.py`) |
 | `Add PiecePlay README and Docker build script` | 이 문서, `buildsystem/pieceplay-docker-build.sh` |
+| `Add a Docker script that packages the 4-ABI AAR` | `buildsystem/pieceplay-docker-aar.sh` |
 
 빠지는 기능: Lua 플레이리스트 파서(유튜브 등), TLS(https)·RTSP 스트리밍, DVD, 일부 오디오·비디오 필터
 (회전, 디인터레이스, 노이즈 제거, 채널 다운믹스 필터), RTP 송출. PiecePlay는 `http://127.0.0.1` 스트림과
@@ -54,8 +55,23 @@ cd pieceplay-libvlc
 
 - 스크립트는 `buildsystem/get-vlc.sh`(VLC clone + 패치 20개)와
   `buildsystem/compile-libvlc.sh -a <abi> --release --license a`를 컨테이너 안에서 실행한다.
-- 결과: `libvlc/jni/libs/<abi>/libvlc.so`, `libc++_shared.so`.
-- contrib를 소스부터 빌드하므로(공식 prebuilt contrib는 GPL 구성이라 쓰지 않는다) ABI마다 수 시간이 걸린다.
+- 결과: `libvlc/jni/libs/<abi>/libvlc.so`, `libvlcjni.so`, `libc++_shared.so`.
+- contrib를 소스부터 빌드한다(공식 prebuilt contrib는 GPL 구성이라 쓰지 않는다). 12코어 기준 ABI당 약 12~15분, 빌드 트리는 ABI당 약 6 GB다.
+- 32비트와 64비트는 이미지가 다르다. 한 체크아웃에서 여러 ABI를 연달아 빌드하지 말고 **ABI마다 따로 clone한 폴더에서** 빌드한다(`vlc/extras/tools`를 다른 이미지에서 만든 것을 다시 쓰게 된다).
+
+### AAR 만들기
+
+4 ABI를 모두 빌드한 뒤, 한 체크아웃(예: arm64 폴더)의 `libvlc/jni/libs/`에 나머지 ABI 폴더를 복사하고 실행한다.
+
+```sh
+cp -r ../x86_64/libvlc/jni/libs/x86_64 ../arm/libvlc/jni/libs/armeabi-v7a ../x86/libvlc/jni/libs/x86 libvlc/jni/libs/
+./buildsystem/pieceplay-docker-aar.sh
+```
+
+- 64비트 이미지 안에서 `GRADLE_ABI=all gradle :libvlc:assembleRelease`를 실행한다. 결과는 `libvlc/build/outputs/aar/libvlc-release.aar`다.
+- 구조는 공식 `libvlc-all` AAR과 같다(`classes.jar`, `jni/<abi>/*.so`, `AndroidManifest.xml`, `res/`, `R.txt`, `assets/hrtfs/`). `assets/lua/`는 없다.
+- 이미지의 SDK는 읽기 전용이고 `android-37.0`만 있어, 스크립트가 컨테이너 안에서 SDK를 쓰기 가능한 곳에 복사한 뒤 Gradle이 `android-36`을 받게 한다(네트워크 필요).
+- 비트 단위 재현 빌드가 아니다. `get-vlc.sh`의 `git am`이 실행 시각으로 커밋을 만들어 VLC 커밋 해시가 빌드마다 달라지고, `.so` 바이트도 달라진다. Release 본문에 실제 해시와 SHA-256을 적는다.
 
 ## 검사
 
