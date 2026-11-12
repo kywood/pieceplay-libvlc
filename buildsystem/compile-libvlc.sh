@@ -503,15 +503,34 @@ else
     VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gettext"
 fi
 
+# VLC modules that are GPL themselves or that wrap GPL contribs. configure would
+# disable most of them once the contribs are missing; be explicit anyway so a
+# stray system/contrib library can never turn them back on.
+AVLC_NO_GPL_CONFIGURE_ARGS="\
+    --disable-x264 \
+    --disable-x26410b \
+    --disable-x265 \
+    --disable-postproc \
+    --disable-dvdnav \
+    --disable-dvdread \
+    --disable-a52 \
+    --disable-faad \
+    --disable-mad \
+    --disable-realrtsp \
+    --disable-lua \
+"
+
 case $AVLC_CONTRIB_LICENSE in
     l)
         # LGPL v3 + ad-clauses
         VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --enable-ad-clauses"
-        VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS --enable-live555"
+        VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS --enable-live555 $AVLC_NO_GPL_CONFIGURE_ARGS"
     ;;
     a)
         # LGPL v2.1 + ad-clauses
         VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --disable-gnuv3 --enable-ad-clauses"
+        # gnutls/nettle/gmp and live555 are (L)GPLv3 and are not built
+        VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS $AVLC_NO_GPL_CONFIGURE_ARGS --disable-gnutls --disable-live555"
     ;;
     g|*)
         # GPL v3
