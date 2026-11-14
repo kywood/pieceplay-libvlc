@@ -1,0 +1,235 @@
+# Rebuild the PiecePlay LGPL LibVLC AAR from this repository with the same
+# scripts and VideoLAN images as the release, then compare it with a release.
+#
+# - build: one job per ABI runs buildsystem/pieceplay-docker-build.sh (the
+#   same command as a local build). compile-libvlc.sh fails the job if the
+#   GPL gate finds anything (contrib libraries, lib*_plugin.a, linked .so).
+# - package: buildsystem/pieceplay-docker-aar.sh packs the 4 ABIs into one
+#   AAR, libvlc_gpl_scan.py scans it, and pieceplay-compare-aar.py compares it
+#   with the release AAR (checksum-verified against the release SHA256SUMS).
+#
+# Outputs (workflow artifacts): the rebuilt AAR with SHA256SUMS and the
+# comparison report, per-ABI build logs, and the contrib source tarballs
+# that the build downloaded (the sources of the bundled libraries).
+name: Reproduce AAR
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference_tag:
+        description: Release tag whose AAR the rebuild is compared with
+        default: 3.7.5-lgpl.1
+      require_identical_native:
+        description: Fail when a native library is not byte-identical to the release
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/reproduce.yml
+      - buildsystem/**
+      - libvlc/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reproduce-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned by digest: the tags are VideoLAN CI tags and may be removed or
+  # moved. The build scripts use the tag names, so the pulled image is
+  # re-tagged locally.
+  IMAGE_64: registry.videolan.org/vlc-debian-android:20260611225331
+  IMAGE_64_DIGEST: sha256:5f041ff50465aea803b93855d463f4b98f1d9f3be6628e304af2bf3fded6f98e
+  IMAGE_32: registry.videolan.org/vlc-debian-android-3.0:20260701183656
+  IMAGE_32_DIGEST: sha256:b3bc028e3c7cb62d2f9910487a8835c02c13c5d2d8dcf09156dd09dd6f2eddca
+  REFERENCE_TAG: ${{ inputs.reference_tag || '3.7.5-lgpl.1' }}
+
+jobs:
+  build:
+    name: build ${{ matrix.abi_dir }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { abi: arm64, abi_dir: arm64-v8a, bits: 64 }
+          - { abi: x86_64, abi_dir: x86_64, bits: 64 }
+          - { abi: arm, abi_dir: armeabi-v7a, bits: 32 }
+          - { abi: x86, abi_dir: x86, bits: 32 }
+    steps:
+      - name: Free disk space
+        # The image is ~8 GB unpacked and the build tree ~6 GB; a standard
+        # runner starts with ~14 GB free.
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune -af > /dev/null
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          # Build the PR head itself, not the merge commit: the commit time
+          # feeds SOURCE_DATE_EPOCH and the revision recorded in the AAR.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Pull the build image by digest
+        run: |
+          if [ "${{ matrix.bits }}" = 64 ]; then image=$IMAGE_64 digest=$IMAGE_64_DIGEST
+          else image=$IMAGE_32 digest=$IMAGE_32_DIGEST; fi
+          repo=${image%:*}
+          for i in 1 2 3; do docker pull "$repo@$digest" && break; sleep 30; done
+          docker tag "$repo@$digest" "$image"
+
+      - name: Build ${{ matrix.abi_dir }}
+        run: |
+          mkdir -p out
+          ./buildsystem/pieceplay-docker-build.sh ${{ matrix.abi }} 2>&1 | tee out/build-${{ matrix.abi_dir }}.log
+          test "${PIPESTATUS[0]}" = 0
+        shell: bash
+
+      - name: Record the result
+        if: always()
+        run: |
+          {
+            echo "abi=${{ matrix.abi_dir }}"
+            echo "repository_commit=$(git rev-parse HEAD)"
+            echo "vlc_head=$(git -C vlc rev-parse HEAD 2>/dev/null || echo none)"
+          } > out/build-${{ matrix.abi_dir }}.txt
+          if [ -d libvlc/jni/libs/${{ matrix.abi_dir }} ]; then
+            (cd libvlc/jni/libs && sha256sum ${{ matrix.abi_dir }}/*.so) >> out/build-${{ matrix.abi_dir }}.txt
+          fi
+          if [ -d vlc/contrib/tarballs ]; then
+            (cd vlc/contrib/tarballs && find . -maxdepth 1 -type f ! -name '.*' -printf '%f\n' | sort \
+              | xargs sha256sum) > out/contrib-tarballs-${{ matrix.abi_dir }}.sha256
+          fi
+          cat out/build-${{ matrix.abi_dir }}.txt
+          df -h /
+
+      - name: Upload shared libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: libs-${{ matrix.abi_dir }}
+          path: libvlc/jni/libs/${{ matrix.abi_dir }}/*.so
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-${{ matrix.abi_dir }}
+          path: out/
+          retention-days: 30
+
+      - name: Upload contrib source tarballs
+        # One copy is enough; the package job checks that every ABI fetched
+        # the same tarballs.
+        if: matrix.abi == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: contrib-tarballs
+          path: vlc/contrib/tarballs/
+          compression-level: 0
+          retention-days: 30
+
+  package:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune -af > /dev/null
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Pull the build image by digest
+        run: |
+          repo=${IMAGE_64%:*}
+          for i in 1 2 3; do docker pull "$repo@$IMAGE_64_DIGEST" && break; sleep 30; done
+          docker tag "$repo@$IMAGE_64_DIGEST" "$IMAGE_64"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: libs-*
+          path: dl
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: log-*
+          path: logs
+          merge-multiple: true
+
+      - name: Check that every ABI fetched the same contrib tarballs
+        run: |
+          ls logs/contrib-tarballs-*.sha256
+          first=$(ls logs/contrib-tarballs-*.sha256 | head -1)
+          for f in logs/contrib-tarballs-*.sha256; do
+            if ! cmp -s "$first" "$f"; then
+              echo "::warning::$f differs from $first"
+              diff "$first" "$f" || true
+            fi
+          done
+
+      - name: Package the AAR
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            mkdir -p libvlc/jni/libs/$abi
+            cp dl/libs-$abi/*.so libvlc/jni/libs/$abi/
+          done
+          ./buildsystem/pieceplay-docker-aar.sh
+          mkdir -p out
+          cp libvlc/build/outputs/aar/*.aar out/libvlc-lgpl-rebuild-$(git rev-parse --short=7 HEAD).aar
+
+      - name: GPL scan
+        run: |
+          python3 -I buildsystem/libvlc_gpl_scan.py out/*.aar libvlc/jni/libs | tee out/gpl-scan.txt
+          test "${PIPESTATUS[0]}" = 0
+        shell: bash
+
+      - name: Download and verify the reference release
+        run: |
+          mkdir ref
+          gh release download "$REFERENCE_TAG" -R "$GITHUB_REPOSITORY" -D ref -p '*.aar' -p SHA256SUMS
+          (cd ref && grep '\.aar$' SHA256SUMS | sha256sum -c -)
+
+      - name: Compare with the reference release
+        run: |
+          flag=
+          [ "${{ inputs.require_identical_native }}" = true ] && flag=--require-identical-native
+          python3 -I buildsystem/pieceplay-compare-aar.py ref/*.aar out/*.aar $flag > out/compare.md
+          status=$?
+          cat out/compare.md >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+        shell: bash {0}
+
+      - name: Checksums
+        if: always()
+        run: |
+          cd out
+          sha256sum *.aar > SHA256SUMS
+          unzip -o -q *.aar 'jni/*' classes.jar -d unpacked
+          (cd unpacked && sha256sum classes.jar jni/*/*.so) >> SHA256SUMS
+          rm -rf unpacked
+          cat SHA256SUMS
+          { echo; echo '### Rebuilt SHA256SUMS'; echo '```'; cat SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the rebuilt AAR and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aar
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
