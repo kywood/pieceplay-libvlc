@@ -76,7 +76,7 @@ cp -r ../x86_64/libvlc/jni/libs/x86_64 ../arm/libvlc/jni/libs/armeabi-v7a ../x86
 - 64비트 이미지 안에서 `GRADLE_ABI=all gradle :libvlc:assembleRelease`를 실행한다. 결과는 `libvlc/build/outputs/aar/libvlc-release.aar`다.
 - 구조는 공식 `libvlc-all` AAR과 같다(`classes.jar`, `jni/<abi>/*.so`, `AndroidManifest.xml`, `res/`, `R.txt`, `assets/hrtfs/`). `assets/lua/`는 없다.
 - 이미지의 SDK는 읽기 전용이고 `android-37.0`만 있어, 스크립트가 컨테이너 안에서 SDK를 쓰기 가능한 곳에 복사한 뒤 Gradle이 `android-36`을 받게 한다(네트워크 필요).
-- 재현 빌드: `pieceplay-docker-build.sh`가 `git am`의 커밋 시각(`GIT_COMMITTER_DATE`, `SOURCE_DATE_EPOCH`)을 VLC 기준 커밋 시각(2026-07-04T16:12:55Z)으로, 컨테이너 호스트 이름을 `pieceplay-build`로 고정한다. 그래서 같은 소스면 VLC 커밋 해시와 `.so`가 바이트 단위로 같다(같은 커밋을 이 저장소 개발 PC의 WSL과 GitHub Actions에서 따로 빌드해 `.so`의 SHA-256을 대조한다). AAR은 `res/values/values.xml`의 `build_libvlc_revision`(이 저장소의 커밋)만 달라질 수 있다.
+- 재현 빌드: `pieceplay-docker-build.sh`가 `git am`의 커밋 시각(`GIT_COMMITTER_DATE`, `SOURCE_DATE_EPOCH`)을 VLC 기준 커밋 시각(2026-07-04T16:12:55Z)으로, 컨테이너 호스트 이름을 `pieceplay-build`로 고정한다. 그래서 같은 소스면 VLC 커밋 해시와 `.so`가 바이트 단위로 같다(같은 커밋을 이 저장소 개발 PC의 WSL과 GitHub Actions에서 따로 빌드해 `.so`의 SHA-256을 대조한다). AAR은 `res/values/values.xml`의 `build_libvlc_revision`(이 저장소의 커밋)만 달라질 수 있다. 예외: armeabi-v7a `libvlc.so`는 `.note.gnu.build-id`(20바이트)만 달라질 수 있다. 링크할 때 strip 전 바이너리로 계산하는 값이라 배포되는 코드·데이터와는 관계없고, 비교 스크립트는 이 경우를 "build ID only"로 따로 표시한다.
 - `3.7.5-lgpl.1`은 이 고정을 넣기 전에 빌드했다. 그래서 그 Release의 `libvlc.so`는 다시 빌드한 것과 바이트가 다르다(VLC 커밋 해시 문자열 차이). 구조·Java API·GPL 검사로 비교한다.
 
 ## 재현 빌드(GitHub Actions)

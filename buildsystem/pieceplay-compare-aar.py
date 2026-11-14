@@ -12,9 +12,11 @@ Checks (any failure exits with status 1):
   4. classes.jar holds the same classes, and `javap -p` (every member,
      private included) prints the same output for each class. Skipped with
      a warning when javap is not on PATH.
-  5. Native libraries are listed with their size and SHA-256. They are only
-     required to be identical with --require-identical-native, because the
-     released 3.7.5-lgpl.1 was built before the build dates were pinned.
+  5. Native libraries are listed with their size and SHA-256, and whether
+     they are byte-identical or identical except the .note.gnu.build-id
+     contents. They are only required to match (either way) with
+     --require-identical-native, because the released 3.7.5-lgpl.1 was built
+     before the build was made reproducible.
 
 The report is Markdown on stdout, so it can go straight to
 $GITHUB_STEP_SUMMARY. The GPL scan (libvlc_gpl_scan.py) is a separate step.
@@ -23,6 +25,7 @@ import hashlib
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -37,6 +40,44 @@ def sha256(data):
 
 def is_native(name):
     return name.startswith("jni/") and name.endswith(".so")
+
+
+def without_build_id(data):
+    """The ELF file with the .note.gnu.build-id contents zeroed, or None if it has none.
+
+    The linker computes the build ID before the libraries are stripped, so it
+    can differ while every shipped byte of code and data is the same.
+    """
+    if data[:4] != b"\x7fELF":
+        return None
+    is64 = data[4] == 2
+    e = "<" if data[5] == 1 else ">"
+    if is64:
+        shoff, = struct.unpack_from(e + "Q", data, 0x28)
+        shentsize, shnum, shstrndx = struct.unpack_from(e + "HHH", data, 0x3A)
+    else:
+        shoff, = struct.unpack_from(e + "I", data, 0x20)
+        shentsize, shnum, shstrndx = struct.unpack_from(e + "HHH", data, 0x2E)
+
+    def section(i):
+        off = shoff + i * shentsize
+        if is64:
+            name, _, _, _, offset, size = struct.unpack_from(e + "IIQQQQ", data, off)
+        else:
+            name, _, _, _, offset, size = struct.unpack_from(e + "IIIIII", data, off)
+        return name, offset, size
+
+    _, str_off, _ = section(shstrndx)
+    for i in range(shnum):
+        name, offset, size = section(i)
+        end = data.index(b"\0", str_off + name)
+        if data[str_off + name:end] == b".note.gnu.build-id":
+            namesz, descsz = struct.unpack_from(e + "II", data, offset)
+            desc = offset + 12 + ((namesz + 3) & ~3)
+            out = bytearray(data)
+            out[desc:desc + descsz] = bytes(descsz)
+            return bytes(out)
+    return None
 
 
 def javap_dump(jar_bytes, workdir, tag):
@@ -140,16 +181,24 @@ def main(argv):
     # 5. native libraries
     natives = [n for n in common if is_native(n)]
     same_native = 0
+    build_id_only = 0
     lines += ["### 5. Native libraries", "",
               "| file | reference size | rebuilt size | identical | rebuilt sha256 |",
               "|---|---:|---:|---|---|"]
     for n in natives:
-        same = ref[n] == new[n]
-        same_native += same
-        lines.append(f"| `{n}` | {len(ref[n]):,} | {len(new[n]):,} | {'yes' if same else 'no'} | `{sha256(new[n])}` |")
+        if ref[n] == new[n]:
+            state = "yes"
+            same_native += 1
+        elif without_build_id(ref[n]) is not None and without_build_id(ref[n]) == without_build_id(new[n]):
+            state = "build ID only"
+            build_id_only += 1
+        else:
+            state = "no"
+        lines.append(f"| `{n}` | {len(ref[n]):,} | {len(new[n]):,} | {state} | `{sha256(new[n])}` |")
     lines.append("")
-    lines.append(f"{same_native}/{len(natives)} native libraries byte-identical.")
-    if require_identical_native and same_native != len(natives):
+    lines.append(f"{same_native}/{len(natives)} native libraries byte-identical, "
+                 f"{build_id_only} identical except the build ID note.")
+    if require_identical_native and same_native + build_id_only != len(natives):
         failures.append("native libraries differ (--require-identical-native)")
     lines.append("")
 
