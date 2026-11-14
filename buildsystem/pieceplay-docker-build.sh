@@ -23,9 +23,11 @@ esac
 
 # Reproducibility: get-vlc.sh applies the VLC patches with `git am`, which
 # stamps each commit with the current time, and VLC's configure records the
-# build host name (VLC_COMPILE_HOST). Pin both to the commit time of this
-# checkout so the same commit always gives the same VLC hash.
-SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$SRC_DIR" log -1 --format=%ct)}
+# build host name (VLC_COMPILE_HOST). Pin both so the same sources always give
+# the same VLC hash and byte-identical shared libraries. The date is the commit
+# time of the VLC base (3.0.x ac6c2a40, 2026-07-04T16:12:55Z), so commits in
+# this repository that do not touch the build inputs do not change it.
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1783181575}
 
 echo "start: $(date -u +%Y-%m-%dT%H:%M:%SZ) abi=$ABI license=$LICENSE image=$IMAGE source_date_epoch=$SOURCE_DATE_EPOCH"
 docker run --rm \
