@@ -81,6 +81,10 @@ ALLOWED = {
         "/libgpg-error/src/estream-printf.c":
             "libestream: LGPL-2.1-or-later, ALTERNATIVELY a BSD-style licence; the GPL is only named in "
             "the BSD alternative clause",
+        # x86_64 only
+        "/gcrypt/cipher/keccak-amd64-avx512.S":
+            "libgcrypt part LGPL-2.1-or-later; the KeccakF1600 core is CRYPTOGAMS BSD-3-Clause, which "
+            "may ALTERNATIVELY be distributed under the GPL (libgcrypt LICENSES lists the file as CRYPTOGAMS)",
     },
 }
 
