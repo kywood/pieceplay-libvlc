@@ -31,6 +31,17 @@ GPL = re.compile(rb"GNU General Public License|General Public License as publish
 LGPL = re.compile(rb"Lesser General Public|Library General Public|LGPL", re.I)
 ALTERNATIVE = re.compile(rb"SPDX-License-Identifier:[^\n]*\bOR\b|Redistribution and use in source and binary forms|"
                          rb"Apache License|at your option[^\n]*(?:BSD|MIT)", re.I)
+# GPL files found in otherwise LGPL contribs. Always "gpl", whatever their header says, so a
+# change of the header heuristics can never let them through. Paths are suffixes of the
+# compilation unit path. (3.7.5-lgpl.1/.2 linked all of them; 3.7.5-lgpl.3 removes them.)
+KNOWN_GPL = (
+    "/zvbi/src/packet-830.c",                              # zvbi 0.2.44 COPYING.md: GPL-2
+    "/zvbi/src/pdc.c",                                     # zvbi 0.2.44 COPYING.md: GPL-2
+    "/ffmpeg/libavcodec/aarch64/ac3dsp_init_aarch64.c",    # FFmpeg 8.1.2 header: GPL-2.0-or-later
+    "/ffmpeg/libavcodec/aarch64/ac3dsp_neon.S",            # FFmpeg 8.1.2 header: GPL-2.0-or-later
+    "/ffmpeg/libavutil/aarch64/crc.S",                     # FFmpeg 8.1.2 header: GPL-2.0-or-later
+)
+
 # GPL text with a linking exception that lets the output be distributed under other terms
 # (Bison parser skeleton, GCC runtime library). Reported apart from "dual".
 EXCEPTION = re.compile(rb"As a special exception, you may create a larger work|GCC Runtime Library Exception", re.I)
@@ -90,7 +101,10 @@ def main(argv):
         if not os.path.isfile(path):
             # FFmpeg builds out of tree through a "src" symlink that points at the build-time path
             path = remap(os.path.realpath(path))
-        if os.path.isfile(path):
+        known = [p for p in (unit, path, unit.replace("/vlc_build/src/", "/")) if p.endswith(KNOWN_GPL)]
+        if known:
+            found["gpl"].append(path)
+        elif os.path.isfile(path):
             found[classify(path)].append(path)
         else:
             found["missing"].append(path)
