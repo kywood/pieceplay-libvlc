@@ -277,6 +277,7 @@ Cflags:" > $1/$(echo $2|tr 'A-Z' 'a-z').pc
 # PiecePlay LGPL build: fail the build when a GPL component is left over.
 # Only used with --license l|a (g is GPL on purpose).
 AVLC_GPL_SCAN="$(cd "$(dirname "$0")"; pwd -P)/libvlc_gpl_scan.py"
+AVLC_GPL_SOURCES="$(cd "$(dirname "$0")"; pwd -P)/pieceplay-gpl-sources.py"
 
 avlc_gpl_gate_enabled()
 {
@@ -297,7 +298,9 @@ avlc_gpl_scan()
 avlc_gpl_check_contribs()
 {
     avlc_gpl_gate_enabled || return 0
-    gpl_libs="libx264.a libx265.a libpostproc.a libdvdnav.a libdvdread.a libdvdcss.a liba52.a libfaad.a libmad.a libmpeg2.a liblua.a liblua5.1.a liblua5.2.a"
+    # libzvbi: src/packet-830.c and src/pdc.c are GPL-2 and packet.c (LGPL) calls into them.
+    # librist: bundles Mbed TLS (Apache-2.0 OR GPL-2.0-or-later); RIST is not used.
+    gpl_libs="libx264.a libx265.a libpostproc.a libdvdnav.a libdvdread.a libdvdcss.a liba52.a libfaad.a libmad.a libmpeg2.a liblua.a liblua5.1.a liblua5.2.a libzvbi.a librist.a"
     if [ "$AVLC_CONTRIB_LICENSE" = "a" ]; then
         gpl_libs="$gpl_libs libgnutls.a libnettle.a libhogweed.a libgmp.a libliveMedia.a"
     fi
@@ -310,6 +313,14 @@ avlc_gpl_check_contribs()
         exit 1
     fi
     echo "GPL contrib check: ok ($1/lib)"
+}
+
+# Every compilation unit linked into the unstripped library (DWARF) whose source header is
+# GPL-only fails the build. This catches GPL files inside otherwise LGPL contribs.
+avlc_gpl_check_sources()
+{
+    avlc_gpl_gate_enabled || return 0
+    python3 -I "$AVLC_GPL_SOURCES" "$1" || { echo "GPL source check failed: $1"; exit 1; }
 }
 
 avlc_pkgconfig()
@@ -516,6 +527,9 @@ VLC_MODULE_BLACKLIST="$VLC_MODULE_BLACKLIST
     postproc
     dvdnav
     dvdread
+    zvbi
+    rist
+    access_output_rist
 "
 
 ###########################
@@ -583,17 +597,22 @@ AVLC_NO_GPL_CONFIGURE_ARGS="\
     --disable-mad \
     --disable-realrtsp \
     --disable-lua \
+    --disable-zvbi \
+    --disable-librist \
 "
+# contribs that are not GPL as a whole but contain GPL files (zvbi) or are not needed and
+# carry a GPL alternative (librist with Mbed TLS); see the check in avlc_gpl_check_contribs
+AVLC_NO_GPL_CONTRIB_ARGS="--disable-zvbi --disable-librist"
 
 case $AVLC_CONTRIB_LICENSE in
     l)
         # LGPL v3 + ad-clauses
-        VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --enable-ad-clauses"
+        VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --enable-ad-clauses $AVLC_NO_GPL_CONTRIB_ARGS"
         VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS --enable-live555 $AVLC_NO_GPL_CONFIGURE_ARGS"
     ;;
     a)
         # LGPL v2.1 + ad-clauses
-        VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --disable-gnuv3 --enable-ad-clauses"
+        VLC_CONTRIB_ARGS="$VLC_CONTRIB_ARGS --disable-gpl --disable-gnuv3 --enable-ad-clauses $AVLC_NO_GPL_CONTRIB_ARGS"
         # gnutls/nettle/gmp and live555 are (L)GPLv3 and are not built
         VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS $AVLC_NO_GPL_CONFIGURE_ARGS --disable-gnutls --disable-live555"
     ;;
@@ -602,6 +621,13 @@ case $AVLC_CONTRIB_LICENSE in
         VLC_CONFIGURE_ARGS="$VLC_CONFIGURE_ARGS --enable-live555 --enable-dvdread"
     ;;
 esac
+
+# The base argument lists enable zvbi for every license; the contrib bootstrap stops when a
+# package is both enabled and disabled, so drop the --enable for the LGPL licenses.
+if avlc_gpl_gate_enabled; then
+    VLC_CONTRIB_ARGS=$(echo " $VLC_CONTRIB_ARGS " | sed -e 's/ --enable-zvbi / /g' -e 's/ --enable-librist / /g')
+    VLC_CONFIGURE_ARGS=$(echo " $VLC_CONFIGURE_ARGS " | sed -e 's/ --enable-zvbi / /g' -e 's/ --enable-librist / /g')
+fi
 
 export USE_FFMPEG=1
 (cd $VLC_CONTRIB_DIR && ANDROID_ABI=${ANDROID_ABI} ANDROID_API=${ANDROID_API} \
@@ -840,6 +866,8 @@ rm -f $VLC_OUT_PATH/libs/${ANDROID_ABI}/gdb*
 
 # GPL markers and 16 KB LOAD alignment of the linked shared libraries
 avlc_gpl_scan "$LIBVLCJNI_SRC_DIR/libvlc/jni/libs/${ANDROID_ABI}"
+# GPL-only source files linked into libvlc.so (needs the DWARF of the unstripped copy)
+avlc_gpl_check_sources "$LIBVLCJNI_SRC_DIR/libvlc/jni/obj/local/${ANDROID_ABI}/libvlc.so"
 
 } # avlc_build()
 
