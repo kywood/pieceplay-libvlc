@@ -11,7 +11,7 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 |---|---|---|
 | libvlcjni (Java/JNI 바인딩, 빌드 스크립트) | https://code.videolan.org/videolan/libvlcjni | 브랜치 `libvlcjni-3.x`, 커밋 `81bb02b` ("Bump vlc 3 version", Maven `org.videolan.android:libvlc-all:3.7.5`에 해당) |
 | VLC | https://code.videolan.org/videolan/vlc | 브랜치 `3.0.x`, 커밋 `ac6c2a405d652b5576128ceb9fec2c342f0e83ec` |
-| VLC 패치 | 이 저장소 `libvlc/patches/0001`~`0021` | `0001`~`0020`은 libvlcjni 원본 그대로, `0021`은 재현 빌드용으로 더한 것. `buildsystem/get-vlc.sh`가 `git am`으로 적용한다 |
+| VLC 패치 | 이 저장소 `libvlc/patches/0001`~`0022` | `0001`~`0020`은 libvlcjni 원본 그대로, `0021`(재현 빌드)·`0022`(FFmpeg aarch64 GPL 파일 제외)는 이 저장소에서 더한 것. `buildsystem/get-vlc.sh`가 `git am`으로 적용한다 |
 | contrib(외부 라이브러리) | VLC `contrib/src/*` 규칙이 받는 각 프로젝트의 원본 tarball | `make fetch`가 받는다. 체크섬은 VLC `contrib/src/*/SHA512SUMS` |
 
 이 저장소의 `main`은 libvlcjni 원본 이력 위에 아래 패치 커밋만 더한 것이다(`git log 81bb02b..main`).
@@ -21,8 +21,12 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 
 - libvlcjni: LGPL-2.1 ([LICENSE](LICENSE), [libvlc/COPYING.LIB](libvlc/COPYING.LIB)).
 - VLC(libvlc, libvlccore, 이 빌드에 남는 모듈): LGPL-2.1-or-later.
-- contrib: 각 프로젝트 라이선스(LGPL-2.1, BSD, MIT, ISC, zlib, FreeType License 등). `--license a`이므로
-  VLC contrib 규칙상 GPL 또는 (L)GPLv3가 필요한 패키지는 빌드되지 않는다.
+- contrib: 각 프로젝트 라이선스(LGPL-2.1, BSD, MIT, ISC, zlib, FreeType License 등). `--license a`이면 VLC contrib
+  규칙이 GPL 또는 (L)GPLv3로 표시한 패키지(x264, dvdnav, gnutls 등)는 빌드되지 않는다. **그러나 이 표시는 패키지
+  단위라, GPL 조건 없이 들어가는 패키지 안에 GPL 파일이 섞인 경우는 막지 못한다.** 실제로 `3.7.5-lgpl.1`과
+  `3.7.5-lgpl.2`에는 zvbi 0.2.44의 GPL-2 파일 `src/packet-830.c`가 링크되어 있었다(arm64는 FFmpeg의 GPL-2+
+  aarch64 파일 3개도). `3.7.5-lgpl.3`부터 zvbi·librist를 끄고 FFmpeg 파일을 빼며(패치 0022), 링크된 소스 파일을
+  하나씩 검사하는 `buildsystem/pieceplay-gpl-sources.py`로 빌드를 멈춘다.
 - 이 저장소에서 더한 변경도 LGPL-2.1로 배포한다.
 
 ## 원본과 다른 점(패치)
@@ -41,8 +45,11 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 | `compile-libvlc: sort the static module list ...` | 정적 모듈 목록을 정렬해 링크 순서가 파일 시스템 순서에 따라 바뀌지 않게 함 |
 | `pieceplay-docker-aar: clone VLC when missing ...` | VLC 체크아웃이 없으면 `get-vlc.sh`부터 실행(`assets/hrtfs`, `build_vlc_revision`) |
 | `Add VLC patch 0021 ...` | `libvlc/patches/0021`: `vlc --version` 안내문의 `__DATE__`·`__TIME__` 제거(NDK r21 clang은 `SOURCE_DATE_EPOCH`를 따르지 않아 32비트 빌드가 매번 달라짐) |
+| `Add VLC patch 0022 ...` | `libvlc/patches/0022`: FFmpeg contrib에 패치를 더해 `libavcodec/aarch64/ac3dsp_init_aarch64.c`, `ac3dsp_neon.S`, `libavutil/aarch64/crc.S`를 빌드하지 않는다. 세 파일은 GPL-2.0-or-later인데 FFmpeg는 `--enable-gpl` 없이도 빌드한다. arm64는 다른 ABI처럼 C 구현을 쓴다 |
+| `compile-libvlc: disable zvbi and librist ...` | contrib와 configure에서 zvbi·librist를 끈다. zvbi 0.2.44는 `src/packet-830.c`·`src/pdc.c`가 GPL-2이고 LGPL인 `packet.c`가 그 함수를 부른다. librist는 Mbed TLS(Apache-2.0 OR GPL-2.0-or-later)를 묶어 넣고, RIST는 쓰지 않는다. 텔레텍스트는 LGPL `telx` 모듈이 맡는다 |
+| `Add a link-time check for GPL-only source files ...` | `buildsystem/pieceplay-gpl-sources.py`: strip 전 `libvlc.so`의 DWARF에서 링크된 소스 파일을 모두 뽑아 헤더가 GPL 전용이면 빌드를 실패시킨다(이중 라이선스·Bison 예외는 따로 표시). `libvlc_gpl_scan.py`에 zvbi·librist 표식 추가 |
 
-빠지는 기능: Lua 플레이리스트 파서(유튜브 등), TLS(https)·RTSP 스트리밍, DVD, 일부 오디오·비디오 필터
+빠지는 기능: Lua 플레이리스트 파서(유튜브 등), TLS(https)·RTSP·RIST 스트리밍, DVD, zvbi(텔레텍스트는 `telx`가 대신함), 일부 오디오·비디오 필터
 (회전, 디인터레이스, 노이즈 제거, 채널 다운믹스 필터), RTP 송출. PiecePlay는 `http://127.0.0.1` 스트림과
 파일만 VLC에 넘기므로 재생 경로에는 영향이 없는 것으로 본다.
 
@@ -103,3 +110,4 @@ python3 -I buildsystem/libvlc_gpl_scan.py libvlc/jni/libs/arm64-v8a
 
 GPL 구성요소 흔적이 하나라도 있거나 64비트 `.so`의 LOAD 정렬이 16 KB보다 작으면 종료 코드 1로 끝난다.
 빌드 중에도 같은 검사가 contrib 설치 디렉터리, 정적 모듈 목록, 링크된 `.so`에 대해 자동으로 돈다.
+그 뒤 `buildsystem/pieceplay-gpl-sources.py`가 strip 전 `libvlc/jni/obj/local/<abi>/libvlc.so`에 링크된 소스 파일(DWARF 컴파일 단위, ABI마다 약 4,100개)의 헤더를 읽어 GPL 전용 파일이 하나라도 있으면 빌드를 실패시킨다. 디버그 정보 없이 빌드되는 contrib와 NDK 런타임은 이 검사에서 "디스크에 없음"으로 따로 센다.
