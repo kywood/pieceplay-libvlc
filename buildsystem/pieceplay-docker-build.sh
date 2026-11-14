@@ -21,10 +21,21 @@ case $ABI in
     *) echo "unknown ABI: $ABI"; exit 1 ;;
 esac
 
-echo "start: $(date -u +%Y-%m-%dT%H:%M:%SZ) abi=$ABI license=$LICENSE image=$IMAGE"
+# Reproducibility: get-vlc.sh applies the VLC patches with `git am`, which
+# stamps each commit with the current time, and VLC's configure records the
+# build host name (VLC_COMPILE_HOST). Pin both so the same sources always give
+# the same VLC hash and byte-identical shared libraries. The date is the commit
+# time of the VLC base (3.0.x ac6c2a40, 2026-07-04T16:12:55Z), so commits in
+# this repository that do not touch the build inputs do not change it.
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1783181575}
+
+echo "start: $(date -u +%Y-%m-%dT%H:%M:%SZ) abi=$ABI license=$LICENSE image=$IMAGE source_date_epoch=$SOURCE_DATE_EPOCH"
 docker run --rm \
     --user "$(id -u):$(id -g)" \
+    --hostname pieceplay-build \
     -e HOME=/tmp \
+    -e SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+    -e GIT_COMMITTER_DATE="@$SOURCE_DATE_EPOCH +0000" \
     -e GIT_AUTHOR_NAME="PiecePlay LibVLC build" \
     -e GIT_AUTHOR_EMAIL="build@localhost" \
     -e GIT_COMMITTER_NAME="PiecePlay LibVLC build" \

@@ -255,7 +255,7 @@ avlc_checkfail()
 
 avlc_find_modules()
 {
-    echo "$(find $1 -name 'lib*plugin.a' | grep -vE "lib(${blacklist_regexp})_plugin.a" | tr '\n' ' ')"
+    echo "$(find $1 -name 'lib*plugin.a' | LC_ALL=C sort | grep -vE "lib(${blacklist_regexp})_plugin.a" | tr '\n' ' ')"
 }
 
 avlc_get_symbol()

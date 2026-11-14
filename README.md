@@ -11,7 +11,7 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 |---|---|---|
 | libvlcjni (Java/JNI 바인딩, 빌드 스크립트) | https://code.videolan.org/videolan/libvlcjni | 브랜치 `libvlcjni-3.x`, 커밋 `81bb02b` ("Bump vlc 3 version", Maven `org.videolan.android:libvlc-all:3.7.5`에 해당) |
 | VLC | https://code.videolan.org/videolan/vlc | 브랜치 `3.0.x`, 커밋 `ac6c2a405d652b5576128ceb9fec2c342f0e83ec` |
-| VLC 패치 | 이 저장소 `libvlc/patches/0001`~`0020` | libvlcjni 원본 그대로. `buildsystem/get-vlc.sh`가 `git am`으로 적용한다 |
+| VLC 패치 | 이 저장소 `libvlc/patches/0001`~`0021` | `0001`~`0020`은 libvlcjni 원본 그대로, `0021`은 재현 빌드용으로 더한 것. `buildsystem/get-vlc.sh`가 `git am`으로 적용한다 |
 | contrib(외부 라이브러리) | VLC `contrib/src/*` 규칙이 받는 각 프로젝트의 원본 tarball | `make fetch`가 받는다. 체크섬은 VLC `contrib/src/*/SHA512SUMS` |
 
 이 저장소의 `main`은 libvlcjni 원본 이력 위에 아래 패치 커밋만 더한 것이다(`git log 81bb02b..main`).
@@ -36,6 +36,11 @@ GPL 구성요소를 뺀 LibVLC for Android 빌드와 그 소스다. PiecePlay �
 | `compile-libvlc: add a GPL scan gate for LGPL builds` | GPL contrib 라이브러리가 남았거나, 링크 전 `lib*_plugin.a` 또는 링크된 `.so`에 GPL 흔적이 있거나, 64비트 `.so`의 LOAD 정렬이 16 KB 미만이면 빌드를 실패시킴(`buildsystem/libvlc_gpl_scan.py`) |
 | `Add PiecePlay README and Docker build script` | 이 문서, `buildsystem/pieceplay-docker-build.sh` |
 | `Add a Docker script that packages the 4-ABI AAR` | `buildsystem/pieceplay-docker-aar.sh` |
+| `pieceplay-docker-build: pin ...` | 재현 빌드를 위해 `git am` 커밋 시각과 컨테이너 호스트 이름 고정 |
+| `Add a GitHub Actions workflow ...` | `.github/workflows/reproduce.yml`, `buildsystem/pieceplay-compare-aar.py` |
+| `compile-libvlc: sort the static module list ...` | 정적 모듈 목록을 정렬해 링크 순서가 파일 시스템 순서에 따라 바뀌지 않게 함 |
+| `pieceplay-docker-aar: clone VLC when missing ...` | VLC 체크아웃이 없으면 `get-vlc.sh`부터 실행(`assets/hrtfs`, `build_vlc_revision`) |
+| `Add VLC patch 0021 ...` | `libvlc/patches/0021`: `vlc --version` 안내문의 `__DATE__`·`__TIME__` 제거(NDK r21 clang은 `SOURCE_DATE_EPOCH`를 따르지 않아 32비트 빌드가 매번 달라짐) |
 
 빠지는 기능: Lua 플레이리스트 파서(유튜브 등), TLS(https)·RTSP 스트리밍, DVD, 일부 오디오·비디오 필터
 (회전, 디인터레이스, 노이즈 제거, 채널 다운믹스 필터), RTP 송출. PiecePlay는 `http://127.0.0.1` 스트림과
@@ -71,7 +76,24 @@ cp -r ../x86_64/libvlc/jni/libs/x86_64 ../arm/libvlc/jni/libs/armeabi-v7a ../x86
 - 64비트 이미지 안에서 `GRADLE_ABI=all gradle :libvlc:assembleRelease`를 실행한다. 결과는 `libvlc/build/outputs/aar/libvlc-release.aar`다.
 - 구조는 공식 `libvlc-all` AAR과 같다(`classes.jar`, `jni/<abi>/*.so`, `AndroidManifest.xml`, `res/`, `R.txt`, `assets/hrtfs/`). `assets/lua/`는 없다.
 - 이미지의 SDK는 읽기 전용이고 `android-37.0`만 있어, 스크립트가 컨테이너 안에서 SDK를 쓰기 가능한 곳에 복사한 뒤 Gradle이 `android-36`을 받게 한다(네트워크 필요).
-- 비트 단위 재현 빌드가 아니다. `get-vlc.sh`의 `git am`이 실행 시각으로 커밋을 만들어 VLC 커밋 해시가 빌드마다 달라지고, `.so` 바이트도 달라진다. Release 본문에 실제 해시와 SHA-256을 적는다.
+- 재현 빌드: `pieceplay-docker-build.sh`가 `git am`의 커밋 시각(`GIT_COMMITTER_DATE`, `SOURCE_DATE_EPOCH`)을 VLC 기준 커밋 시각(2026-07-04T16:12:55Z)으로, 컨테이너 호스트 이름을 `pieceplay-build`로 고정한다. 그래서 같은 소스면 VLC 커밋 해시와 `.so`가 바이트 단위로 같다(같은 커밋을 이 저장소 개발 PC의 WSL과 GitHub Actions에서 따로 빌드해 `.so`의 SHA-256을 대조한다). AAR은 `res/values/values.xml`의 `build_libvlc_revision`(이 저장소의 커밋)만 달라질 수 있다. 예외: armeabi-v7a `libvlc.so`는 `.note.gnu.build-id`(20바이트)만 달라질 수 있다. 링크할 때 strip 전 바이너리로 계산하는 값이라 배포되는 코드·데이터와는 관계없고, 비교 스크립트는 이 경우를 "build ID only"로 따로 표시한다.
+- `3.7.5-lgpl.1`은 이 고정을 넣기 전에 빌드했다. 그래서 그 Release의 `libvlc.so`는 다시 빌드한 것과 바이트가 다르다(VLC 커밋 해시 문자열 차이). 구조·Java API·GPL 검사로 비교한다.
+
+## 재현 빌드(GitHub Actions)
+
+`.github/workflows/reproduce.yml`이 위와 같은 스크립트와 이미지(digest 고정)로 4 ABI를 따로 빌드하고 AAR로 묶은 뒤 검사한다.
+`buildsystem/`·`libvlc/`·워크플로를 바꾸는 PR과 수동 실행(`workflow_dispatch`)에서 돈다.
+
+1. ABI별 job: `pieceplay-docker-build.sh <abi>`(빌드 안 GPL 게이트 포함). `.so`, 빌드 로그, VLC HEAD, contrib tarball 목록과 SHA-256을 아티팩트로 올린다. arm64 job은 contrib 원본 tarball 묶음(`contrib-tarballs`)도 올린다.
+2. package job: `pieceplay-docker-aar.sh`로 AAR을 만들고 `libvlc_gpl_scan.py`로 검사한 뒤, Release AAR(Release의 `SHA256SUMS`로 확인)과 `buildsystem/pieceplay-compare-aar.py`로 비교한다. 결과는 실행 요약(Summary)과 `aar` 아티팩트(AAR, `SHA256SUMS`, `compare.md`, `gpl-scan.txt`)에 남는다.
+
+비교 기준: 파일 목록이 같고 `assets/lua/`가 없을 것, `.so`·`classes.jar`·`values.xml` 밖의 파일이 바이트 단위로 같을 것, `values.xml`은 리비전 문자열만 다를 것, `classes.jar`는 클래스마다 `javap -p` 출력이 같을 것. `.so`는 크기와 SHA-256을 표로 남기고, 수동 실행에서 `require_identical_native`를 켜면 바이트가 다를 때 실패한다.
+
+로컬에서 같은 비교를 하려면:
+
+```sh
+python3 -I buildsystem/pieceplay-compare-aar.py <release.aar> <rebuilt.aar>
+```
 
 ## 검사
 
