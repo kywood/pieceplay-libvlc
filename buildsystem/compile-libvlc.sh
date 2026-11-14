@@ -622,6 +622,13 @@ case $AVLC_CONTRIB_LICENSE in
     ;;
 esac
 
+# The base argument lists enable zvbi for every license; the contrib bootstrap stops when a
+# package is both enabled and disabled, so drop the --enable for the LGPL licenses.
+if avlc_gpl_gate_enabled; then
+    VLC_CONTRIB_ARGS=$(echo " $VLC_CONTRIB_ARGS " | sed -e 's/ --enable-zvbi / /g' -e 's/ --enable-librist / /g')
+    VLC_CONFIGURE_ARGS=$(echo " $VLC_CONFIGURE_ARGS " | sed -e 's/ --enable-zvbi / /g' -e 's/ --enable-librist / /g')
+fi
+
 export USE_FFMPEG=1
 (cd $VLC_CONTRIB_DIR && ANDROID_ABI=${ANDROID_ABI} ANDROID_API=${ANDROID_API} \
     ../bootstrap --host=${TARGET_TUPLE} ${VLC_CONTRIB_ARGS})
