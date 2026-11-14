@@ -1,0 +1,32 @@
+From 57050adb0478b3353ec49756ecf73c36c4d1971c Mon Sep 17 00:00:00 2001
+Message-Id: <57050adb0478b3353ec49756ecf73c36c4d1971c.1794640362.git.build@localhost>
+From: PiecePlay LibVLC build <build@localhost>
+Date: Sat, 4 Jul 2026 16:12:55 +0000
+Subject: [PATCH] config: do not record the build date in the version text
+
+__DATE__ and __TIME__ make every build of libvlccore differ, so the
+shared libraries cannot be reproduced byte for byte. NDK r21's clang does
+not honour SOURCE_DATE_EPOCH. The text is only printed by vlc --version.
+Message-Id: <57050adb0478b3353ec49756ecf73c36c4d1971c.1794640362.git.build@localhost>
+---
+ src/config/help.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/config/help.c b/src/config/help.c
+index 4c7033341f..b8c5ea1c85 100644
+--- a/src/config/help.c
++++ b/src/config/help.c
+@@ -719,8 +719,8 @@ static void Version( void )
+ {
+     ShowConsole();
+     printf(_("VLC version %s (%s)\n"), VERSION_MESSAGE, psz_vlc_changeset);
+-    printf(_("Compiled by %s on %s (%s)\n"), VLC_CompileBy(),
+-           VLC_CompileHost(), __DATE__" "__TIME__ );
++    /* No __DATE__/__TIME__: they make every build differ (reproducible builds). */
++    printf(_("Compiled by %s on %s\n"), VLC_CompileBy(), VLC_CompileHost());
+     printf(_("Compiler: %s\n"), VLC_Compiler());
+     fputs(LICENSE_MSG, stdout);
+     PauseConsole();
+-- 
+2.53.0
+
