@@ -1,0 +1,106 @@
+From 1e4e4406efca7917d2ca5931cb5e6a9e0dba0cc1 Mon Sep 17 00:00:00 2001
+Message-Id: <1e4e4406efca7917d2ca5931cb5e6a9e0dba0cc1.1794650002.git.build@localhost>
+From: PiecePlay LibVLC build <build@localhost>
+Date: Sat, 4 Jul 2026 16:12:55 +0000
+Subject: [PATCH] contrib: ffmpeg: do not build the GPL-licensed aarch64 files
+
+libavcodec/aarch64/ac3dsp_init_aarch64.c, libavcodec/aarch64/ac3dsp_neon.S and
+libavutil/aarch64/crc.S carry GPL-2.0-or-later headers but are built without
+--enable-gpl. Drop them so the aarch64 build uses the C code, as the LGPL
+build of the other architectures does.
+Message-Id: <1e4e4406efca7917d2ca5931cb5e6a9e0dba0cc1.1794650002.git.build@localhost>
+---
+ .../src/ffmpeg/pieceplay-no-gpl-aarch64.patch | 67 +++++++++++++++++++
+ contrib/src/ffmpeg/rules.mak                  |  2 +
+ 2 files changed, 69 insertions(+)
+ create mode 100644 contrib/src/ffmpeg/pieceplay-no-gpl-aarch64.patch
+
+diff --git a/contrib/src/ffmpeg/pieceplay-no-gpl-aarch64.patch b/contrib/src/ffmpeg/pieceplay-no-gpl-aarch64.patch
+new file mode 100644
+index 0000000000..2e1971a463
+--- /dev/null
++++ b/contrib/src/ffmpeg/pieceplay-no-gpl-aarch64.patch
+@@ -0,0 +1,67 @@
++--- ffmpeg/libavcodec/aarch64/Makefile
+++++ ffmpeg.new/libavcodec/aarch64/Makefile
++@@ -1,5 +1,4 @@
++ # subsystems
++-OBJS-$(CONFIG_AC3DSP)                   += aarch64/ac3dsp_init_aarch64.o
++ OBJS-$(CONFIG_FDCTDSP)                  += aarch64/fdctdsp_init_aarch64.o
++ OBJS-$(CONFIG_FMTCONVERT)               += aarch64/fmtconvert_init.o
++ OBJS-$(CONFIG_H264CHROMA)               += aarch64/h264chroma_init_aarch64.o
++@@ -42,7 +41,6 @@
++ # subsystems
++ NEON-OBJS-$(CONFIG_AAC_DECODER)         += aarch64/sbrdsp_neon.o
++ NEON-OBJS-$(CONFIG_AAC_ENCODER)         += aarch64/aacencdsp_neon.o
++-NEON-OBJS-$(CONFIG_AC3DSP)              += aarch64/ac3dsp_neon.o
++ NEON-OBJS-$(CONFIG_FDCTDSP)             += aarch64/fdctdsp_neon.o
++ NEON-OBJS-$(CONFIG_FMTCONVERT)          += aarch64/fmtconvert_neon.o
++ NEON-OBJS-$(CONFIG_H264CHROMA)          += aarch64/h264cmc_neon.o
++--- ffmpeg/libavcodec/ac3dsp.c
+++++ ffmpeg.new/libavcodec/ac3dsp.c
++@@ -389,7 +389,7 @@
++     c->downmix               = NULL;
++     c->downmix_fixed         = NULL;
++ 
++-#if ARCH_AARCH64
+++#if 0 /* PiecePlay LGPL build: the aarch64 version is GPL-2.0-or-later */
++     ff_ac3dsp_init_aarch64(c);
++ #elif ARCH_ARM
++     ff_ac3dsp_init_arm(c);
++--- ffmpeg/libavutil/aarch64/Makefile
+++++ ffmpeg.new/libavutil/aarch64/Makefile
++@@ -2,8 +2,6 @@
++         aarch64/float_dsp_init.o                                      \
++         aarch64/tx_float_init.o                                       \
++ 
++-ARMV8-OBJS += aarch64/crc.o
++-
++ NEON-OBJS += aarch64/float_dsp_neon.o                                 \
++              aarch64/tx_float_neon.o                                  \
++ 
++--- ffmpeg/libavutil/crc.c
+++++ ffmpeg.new/libavutil/crc.c
++@@ -25,7 +25,7 @@
++ #include "bswap.h"
++ #include "crc.h"
++ #include "error.h"
++-#if ARCH_AARCH64
+++#if 0 /* PiecePlay LGPL build: the aarch64 version is GPL-2.0-or-later */
++ #include "libavutil/aarch64/crc.h"
++ #elif ARCH_X86
++ #include "libavutil/x86/crc.h"
++@@ -388,7 +388,7 @@
++         return NULL;
++ // Check for arch-specific extensions first to avoid initializing
++ // ordinary CRC tables unnecessarily.
++-#if ARCH_AARCH64
+++#if 0 /* PiecePlay LGPL build: the aarch64 version is GPL-2.0-or-later */
++     const AVCRC *table = ff_crc_get_table_aarch64(crc_id);
++     if (table)
++         return table;
++@@ -418,7 +418,7 @@
++                 const uint8_t *buffer, size_t length)
++ {
++     if (ctx[0]) {
++-#if ARCH_AARCH64
+++#if 0 /* PiecePlay LGPL build: the aarch64 version is GPL-2.0-or-later */
++         return ff_crc_aarch64(ctx, crc, buffer, length);
++ #elif ARCH_X86
++         return ff_crc_x86(ctx, crc, buffer, length);
+diff --git a/contrib/src/ffmpeg/rules.mak b/contrib/src/ffmpeg/rules.mak
+index e4b5595b59..48be936062 100644
+--- a/contrib/src/ffmpeg/rules.mak
++++ b/contrib/src/ffmpeg/rules.mak
+@@ -260,6 +260,8 @@ ifdef USE_FFMPEG
+ 	$(APPLY) $(SRC)/ffmpeg/0001-bring-back-XP-support.patch
+ 	$(APPLY) $(SRC)/ffmpeg/0011-avcodec-videotoolboxenc-disable-calls-on-unsupported.patch
+ 	$(APPLY) $(SRC)/ffmpeg/avcodec-fix-compilation-visionos.patch
++	# PiecePlay LGPL build: libavcodec/aarch64/ac3dsp_* and libavutil/aarch64/crc.S are GPL-2.0-or-later
++	$(APPLY) $(SRC)/ffmpeg/pieceplay-no-gpl-aarch64.patch
+ endif
+ ifdef USE_LIBAV
+ 	$(APPLY) $(SRC)/ffmpeg/libav_gsm.patch
+-- 
+2.53.0
+
